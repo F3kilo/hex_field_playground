@@ -9,19 +9,18 @@ use std::path::PathBuf;
 use tinyfiledialogs::*;
 
 mod error;
-mod input_controller;
+mod input;
 mod input_logger;
 
-use crate::input_controller::InputController;
 use error::init::InitError;
 use error::log_init::LogInitError;
 use sloggers::types::Severity;
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::channel;
 use winit::error::OsError;
 use winit::event::{Event, WindowEvent};
 
 fn main() {
-    let (logger, event_loop, window, input) = init().unwrap_or_else(|e| {
+    let (logger, event_loop, window) = init().unwrap_or_else(|e| {
         let message = format!("Initialization error occurred: {}", e);
         show_error_message("Initialization error", message.as_str());
         panic!(message);
@@ -30,7 +29,6 @@ fn main() {
     info!(logger, "Initialization done");
 
     event_loop.run(move |event, _, control_flow| {
-        let input = input.clone();
         *control_flow = ControlFlow::Wait;
         match event {
             Event::WindowEvent {
@@ -39,18 +37,15 @@ fn main() {
             } => {
                 info!(logger, "Exiting...");
                 *control_flow = ControlFlow::Exit;
-            },
-            Event::DeviceEvent{device_id, event} => {
+            }
+            Event::WindowEvent { event, .. } => {}
+            Event::DeviceEvent { device_id, event } => {
                 // trace!(logger, "Got device input from: {:?}: {:?}", device_id, event);
-                input.process_input(event, device_id);
-            },
+            }
             Event::MainEventsCleared => {
                 window.request_redraw();
-
             }
-            Event::RedrawRequested(_) => {
-
-            }
+            Event::RedrawRequested(_) => {}
             _ => (),
         };
     });
@@ -61,7 +56,7 @@ fn show_error_message(title: &str, message: &str) {
 }
 
 /// Basis structures initialization
-fn init() -> Result<(Logger, EventLoop<()>, Window, InputController), InitError> {
+fn init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
     let mut save_path = default_settings_path()?;
     save_path.push("HexFieldPlayground");
 
@@ -78,15 +73,7 @@ fn init() -> Result<(Logger, EventLoop<()>, Window, InputController), InitError>
     let window = init_window(&event_loop)?;
     trace!(logger, "Window initialized");
 
-    // Init input
-    let (tx, rx) = channel();
-    let input = InputController::new(tx, logger.clone());
-    let input_logger = input_logger::InputLogger::new(rx, logger.clone());
-    std::thread::spawn(|| {
-        input_logger.run();
-    });
-
-    Ok((logger, event_loop, window, input))
+    Ok((logger, event_loop, window))
 }
 
 /// Window initialization
