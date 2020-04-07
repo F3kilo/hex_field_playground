@@ -3,7 +3,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
 use settings_path::*;
-use slog::{info, trace, Logger};
+use slog::{info, trace, warn, Logger};
 use sloggers::{file::FileLoggerBuilder, types::TimeZone, Build};
 use std::path::PathBuf;
 use tinyfiledialogs::*;
@@ -15,12 +15,16 @@ mod input_logger;
 use error::init::InitError;
 use error::log_init::LogInitError;
 use sloggers::types::Severity;
-use std::sync::mpsc::channel;
 use winit::error::OsError;
+
+use crate::input::Input;
+use crate::input_logger::InputLogger;
+use std::convert::TryInto;
+use std::sync::mpsc::{channel, Sender};
 use winit::event::{Event, WindowEvent};
 
 fn main() {
-    let (logger, event_loop, window) = init().unwrap_or_else(|e| {
+    let (logger, event_loop, _window, input_tx) = init().unwrap_or_else(|e| {
         let message = format!("Initialization error occurred: {}", e);
         show_error_message("Initialization error", message.as_str());
         panic!(message);
@@ -30,24 +34,18 @@ fn main() {
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                info!(logger, "Exiting...");
-                *control_flow = ControlFlow::Exit;
-            }
-            Event::WindowEvent { event, .. } => {}
-            Event::DeviceEvent { device_id, event } => {
-                // trace!(logger, "Got device input from: {:?}: {:?}", device_id, event);
-            }
-            Event::MainEventsCleared => {
-                window.request_redraw();
-            }
-            Event::RedrawRequested(_) => {}
-            _ => (),
-        };
+
+        if let Ok(input) = (&event).try_into() {
+            input_tx.send(input).unwrap_or_else(|e| {
+                warn!(logger, "Can't send input event, because: {}", e);
+            });
+            return;
+        }
+
+        if let Event::WindowEvent {event: WindowEvent::CloseRequested, ..} = event {
+            info!(logger, "Exiting...");
+            *control_flow = ControlFlow::Exit;
+        }
     });
 }
 
@@ -56,7 +54,7 @@ fn show_error_message(title: &str, message: &str) {
 }
 
 /// Basis structures initialization
-fn init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
+fn init() -> Result<(Logger, EventLoop<()>, Window, Sender<Input>), InitError> {
     let mut save_path = default_settings_path()?;
     save_path.push("HexFieldPlayground");
 
@@ -73,7 +71,12 @@ fn init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
     let window = init_window(&event_loop)?;
     trace!(logger, "Window initialized");
 
-    Ok((logger, event_loop, window))
+    // Init input sender
+    let (tx, rx) = channel();
+    let input_logger = InputLogger::new(rx, logger.clone());
+    std::thread::spawn(|| input_logger.run());
+
+    Ok((logger, event_loop, window, tx))
 }
 
 /// Window initialization

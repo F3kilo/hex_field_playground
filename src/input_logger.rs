@@ -1,5 +1,5 @@
 use crate::input::Input;
-use slog::{error, trace, Logger};
+use slog::{error, Logger};
 use std::sync::mpsc::Receiver;
 
 /// Logs all input from InputController

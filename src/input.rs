@@ -1,8 +1,8 @@
-use crate::input::InputEvent::{Keyboard, Symbol};
 use std::convert::TryFrom;
 use std::time::Instant;
 use winit::event::{
-    DeviceId, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
+    DeviceEvent, DeviceId, ElementState, Event, MouseButton, MouseScrollDelta, VirtualKeyCode,
+    WindowEvent,
 };
 
 #[derive(Debug, Clone)]
@@ -28,7 +28,13 @@ pub enum InputEvent {
         key: VirtualKeyCode,
         state: ElementState,
     },
-    MouseMove {
+    RawMouseMove {
+        delta: (f64, f64),
+    },
+    CursorMove {
+        position: (f64, f64),
+    },
+    Scroll {
         delta: (f64, f64),
     },
     MouseButton {
@@ -38,35 +44,84 @@ pub enum InputEvent {
     Symbol(char),
 }
 
-impl From<char> for InputEvent {
-    fn from(c: char) -> Self {
-        Symbol(c)
+impl From<MouseScrollDelta> for InputEvent {
+    fn from(delta: MouseScrollDelta) -> Self {
+        let delta = match delta {
+            MouseScrollDelta::PixelDelta(pos) => pos.into(),
+            MouseScrollDelta::LineDelta(x, y) => (x as f64, y as f64),
+        };
+        InputEvent::Scroll { delta }
     }
 }
 
-impl From<(VirtualKeyCode, ElementState)> for InputEvent {
-    fn from(input: (VirtualKeyCode, ElementState)) -> Self {
-        Keyboard {
-            key: input.0,
+impl From<(MouseButton, ElementState)> for InputEvent {
+    fn from(input: (MouseButton, ElementState)) -> Self {
+        InputEvent::MouseButton {
+            button: input.0,
             state: input.1,
         }
     }
 }
 
-impl TryFrom<Event<'_, ()>> for Input {
+impl TryFrom<&Event<'_, ()>> for Input {
     type Error = ();
 
-    fn try_from(event: Event<()>) -> Result<Self, Self::Error> {
+    fn try_from(event: &Event<()>) -> Result<Self, Self::Error> {
         match event {
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::ReceivedCharacter(c) => Ok((None, c.into()).into()),
+                WindowEvent::ReceivedCharacter(c) => {
+                    let event = InputEvent::Symbol(*c);
+                    Ok((None, event).into())
+                }
                 WindowEvent::KeyboardInput {
                     input, device_id, ..
                 } => {
-                    if let Some(key) = input.virtual_keycode {}
-                },
+                    if let Some(key) = input.virtual_keycode {
+                        let event = InputEvent::Keyboard {
+                            key,
+                            state: input.state,
+                        };
+                        return Ok((Some(*device_id), event).into());
+                    }
+                    Err(())
+                }
+                WindowEvent::CursorMoved {
+                    device_id,
+                    position,
+                    ..
+                } => {
+                    let event = InputEvent::CursorMove {
+                        position: (*position).into(),
+                    };
+                    Ok((Some(*device_id), event).into())
+                }
+                WindowEvent::MouseWheel {
+                    device_id, delta, ..
+                } => {
+                    let event = (*delta).into();
+                    Ok((Some(*device_id), event).into())
+                }
+                WindowEvent::MouseInput {
+                    device_id,
+                    button,
+                    state,
+                    ..
+                } => {
+                    let event = InputEvent::MouseButton {
+                        button: *button,
+                        state: *state,
+                    };
+                    Ok((Some(*device_id), event).into())
+                }
                 _ => Err(()),
             },
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                device_id,
+            } => {
+                let event = InputEvent::RawMouseMove { delta: *delta };
+                Ok((Some(*device_id), event).into())
+            }
             _ => Err(()),
         }
     }
