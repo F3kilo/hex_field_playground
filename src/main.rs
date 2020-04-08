@@ -1,3 +1,10 @@
+mod error;
+mod input;
+mod input_logger;
+mod model;
+mod presenter;
+mod renderer;
+
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
@@ -8,9 +15,6 @@ use sloggers::{file::FileLoggerBuilder, types::TimeZone, Build};
 use std::path::PathBuf;
 use tinyfiledialogs::*;
 
-mod error;
-mod input;
-mod input_logger;
 
 use error::init::InitError;
 use error::log_init::LogInitError;
@@ -22,6 +26,7 @@ use crate::input_logger::InputLogger;
 use std::convert::TryInto;
 use std::sync::mpsc::{channel, Sender};
 use winit::event::{Event, WindowEvent};
+
 
 fn main() {
     let (logger, event_loop, _window, input_tx) = init().unwrap_or_else(|e| {
