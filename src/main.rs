@@ -4,6 +4,7 @@ mod input_logger;
 mod model;
 mod presenter;
 mod renderer;
+mod utils;
 
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -15,7 +16,6 @@ use sloggers::{file::FileLoggerBuilder, types::TimeZone, Build};
 use std::path::PathBuf;
 use tinyfiledialogs::*;
 
-
 use error::init::InitError;
 use error::log_init::LogInitError;
 use sloggers::types::Severity;
@@ -26,7 +26,6 @@ use crate::input_logger::InputLogger;
 use std::convert::TryInto;
 use std::sync::mpsc::{channel, Sender};
 use winit::event::{Event, WindowEvent};
-
 
 fn main() {
     let (logger, event_loop, _window, input_tx) = init().unwrap_or_else(|e| {
@@ -47,7 +46,11 @@ fn main() {
             return;
         }
 
-        if let Event::WindowEvent {event: WindowEvent::CloseRequested, ..} = event {
+        if let Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } = event
+        {
             info!(logger, "Exiting...");
             *control_flow = ControlFlow::Exit;
         }

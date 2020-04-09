@@ -1,7 +1,7 @@
-use std::collections::{LinkedList, HashMap};
-use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender};
 use crate::input::{Input, InputEvent};
+use std::collections::{HashMap, LinkedList};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use winit::event::ElementState;
 use winit::event::VirtualKeyCode;
 
@@ -36,13 +36,13 @@ impl NumberState {
     fn update(&mut self, key: VirtualKeyCode, state: ElementState) {
         match key {
             VirtualKeyCode::Up => {
-                if self.up_clicked(state){
+                if self.up_clicked(state) {
                     self.value += 1;
                 }
                 self.up_state = state;
             }
             VirtualKeyCode::Down => {
-                if self.down_clicked(state){
+                if self.down_clicked(state) {
                     self.value -= 1;
                 }
                 self.up_state = state;
@@ -66,7 +66,11 @@ pub struct HexFieldPlaygroundModel {
 }
 
 impl HexFieldPlaygroundModel {
-    pub fn new(input_rx: Receiver<Input>, number_state_tx: Sender<Arc<NumberState>>, control_rx: Receiver<ControlEvents>) -> Self {
+    pub fn new(
+        input_rx: Receiver<Input>,
+        number_state_tx: Sender<Arc<NumberState>>,
+        control_rx: Receiver<ControlEvents>,
+    ) -> Self {
         let number_state = Arc::new(NumberState::new());
         Self {
             input_rx,
@@ -78,9 +82,7 @@ impl HexFieldPlaygroundModel {
 
     pub fn run(&mut self) {
         loop {
-            if let Some(num_state) = Arc::get_mut(&mut self.number_state) {
-                
-            }
+            if let Some(num_state) = Arc::get_mut(&mut self.number_state) {}
         }
     }
 }
