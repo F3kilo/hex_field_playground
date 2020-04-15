@@ -1,17 +1,14 @@
+mod app;
 mod error;
-mod input;
-mod input_logger;
-mod model;
-mod presenter;
-mod renderer;
-mod utils;
 
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
 use settings_path::*;
-use slog::{info, trace, warn, Logger};
+#[macro_use]
+extern crate slog;
+use slog::Logger;
 use sloggers::{file::FileLoggerBuilder, types::TimeZone, Build};
 use std::path::PathBuf;
 use tinyfiledialogs::*;
@@ -21,38 +18,30 @@ use error::log_init::LogInitError;
 use sloggers::types::Severity;
 use winit::error::OsError;
 
-use crate::input::Input;
-use crate::input_logger::InputLogger;
+use crate::app::App;
 use std::convert::TryInto;
-use std::sync::mpsc::{channel, Sender};
-use winit::event::{Event, WindowEvent};
+use std::sync::mpsc::channel;
 
 fn main() {
-    let (logger, event_loop, _window, input_tx) = init().unwrap_or_else(|e| {
+    let (logger, event_loop, _window) = base_init().unwrap_or_else(|e| {
         let message = format!("Initialization error occurred: {}", e);
         show_error_message("Initialization error", message.as_str());
         panic!(message);
     });
+
+    let (event_tx, event_rx) = channel();
+    let _app = App::new(event_rx);
 
     info!(logger, "Initialization done");
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
-        if let Ok(input) = (&event).try_into() {
-            input_tx.send(input).unwrap_or_else(|e| {
-                warn!(logger, "Can't send input event, because: {}", e);
+        if let Ok(e) = event.try_into() {
+            event_tx.send(e).unwrap_or_else(|_| {
+                error!(logger, "Application disconnected. Exitting...");
+                *control_flow = ControlFlow::Exit;
             });
-            return;
-        }
-
-        if let Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } = event
-        {
-            info!(logger, "Exiting...");
-            *control_flow = ControlFlow::Exit;
         }
     });
 }
@@ -62,7 +51,7 @@ fn show_error_message(title: &str, message: &str) {
 }
 
 /// Basis structures initialization
-fn init() -> Result<(Logger, EventLoop<()>, Window, Sender<Input>), InitError> {
+fn base_init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
     let mut save_path = default_settings_path()?;
     save_path.push("HexFieldPlayground");
 
@@ -79,12 +68,7 @@ fn init() -> Result<(Logger, EventLoop<()>, Window, Sender<Input>), InitError> {
     let window = init_window(&event_loop)?;
     trace!(logger, "Window initialized");
 
-    // Init input printer
-    let (tx, rx) = channel();
-    let input_logger = InputLogger::new(rx, logger.clone());
-    std::thread::spawn(|| input_logger.run());
-
-    Ok((logger, event_loop, window, tx))
+    Ok((logger, event_loop, window))
 }
 
 /// Window initialization
