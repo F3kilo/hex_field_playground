@@ -7,6 +7,12 @@ use winit::event::{
 };
 use winit::window::{Theme, WindowId};
 
+#[derive(Debug)]
+pub enum ApplicationEvent {
+    Finished,
+}
+
+#[derive(Debug)]
 pub enum Window {
     Resized(PhysicalSize<u32>),
     Moved(PhysicalPosition<i32>),
@@ -146,6 +152,7 @@ impl<'a> From<winit::event::WindowEvent<'a>> for Window {
     }
 }
 
+#[derive(Debug)]
 pub enum Event {
     Window {
         window_id: WindowId,
@@ -159,10 +166,10 @@ pub enum Event {
     Resumed,
 }
 
-impl<'a> TryFrom<winit::event::Event<'a, ()>> for Event {
-    type Error = winit::event::Event<'a, ()>;
+impl<'a> TryFrom<winit::event::Event<'a, ApplicationEvent>> for Event {
+    type Error = winit::event::Event<'a, ApplicationEvent>;
 
-    fn try_from(event: winit::event::Event<'a, ()>) -> Result<Self, Self::Error> {
+    fn try_from(event: winit::event::Event<'a, ApplicationEvent>) -> Result<Self, Self::Error> {
         match event {
             winit::event::Event::WindowEvent { window_id, event } => Ok(Event::Window {
                 window_id,

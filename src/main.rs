@@ -1,13 +1,17 @@
 mod app;
+mod counter;
 mod error;
 
 use winit::dpi::PhysicalSize;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event::{Event, StartCause};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowBuilder};
 
 use settings_path::*;
+
 #[macro_use]
 extern crate slog;
+
 use slog::Logger;
 use sloggers::{file::FileLoggerBuilder, types::TimeZone, Build};
 use std::path::PathBuf;
@@ -18,10 +22,19 @@ use error::log_init::LogInitError;
 use sloggers::types::Severity;
 use winit::error::OsError;
 
-use crate::app::App;
+use crate::app::{App, Status};
 use std::convert::TryInto;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Sender};
 
+use crate::app::event::ApplicationEvent;
+use counter::Counter;
+use winit::event::Event::UserEvent;
+
+pub enum EventLoopNotice {
+    AppFinished,
+}
+
+#[allow(unreachable_code)]
 fn main() {
     let (logger, event_loop, _window) = base_init().unwrap_or_else(|e| {
         let message = format!("Initialization error occurred: {}", e);
@@ -29,21 +42,65 @@ fn main() {
         panic!(message);
     });
 
-    let (event_tx, event_rx) = channel();
-    let _app = App::new(event_rx);
+    let event_loop_proxy = event_loop.create_proxy();
+
+    let event_tx = run_app(logger.clone(), event_loop_proxy);
 
     info!(logger, "Initialization done");
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        if let Event::NewEvents(StartCause::Init) = event {
+            *control_flow = ControlFlow::Wait;
+        }
 
-        if let Ok(e) = event.try_into() {
-            event_tx.send(e).unwrap_or_else(|_| {
+        if let UserEvent(ApplicationEvent::Finished) = event {
+            trace!(logger, "Exitting from event loop.");
+            *control_flow = ControlFlow::Exit;
+        }
+
+        if let Ok(input_event) = event.try_into() {
+            event_tx.send(input_event).unwrap_or_else(|_| {
                 error!(logger, "Application disconnected. Exitting...");
                 *control_flow = ControlFlow::Exit;
-            });
+            })
         }
     });
+}
+
+fn run_app(
+    logger: Logger,
+    event_loop_proxy: EventLoopProxy<ApplicationEvent>,
+) -> Sender<app::event::Event> {
+    let app_thread_logger = logger.clone();
+    let counter = Counter::new();
+    let (event_tx, event_rx) = channel();
+
+    let app = App::new(event_rx, logger.clone(), counter);
+    std::thread::spawn(move || {
+        let mut app = app;
+        loop {
+            match app.update() {
+                Ok(Status::Finished) => break,
+                Err(e) => {
+                    let error_message = format!("Application update error: {}", e);
+                    error!(app_thread_logger.clone(), "");
+                    show_error_message("Application error", error_message.as_str());
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        event_loop_proxy
+            .send_event(ApplicationEvent::Finished)
+            .unwrap_or_else(|_| {
+                let error_message = "Can't send Finished event to event loop. It's closed already.";
+                error!(app_thread_logger, "{}", error_message);
+                show_error_message("Application error", error_message);
+            });
+    });
+
+    event_tx
 }
 
 fn show_error_message(title: &str, message: &str) {
@@ -51,7 +108,7 @@ fn show_error_message(title: &str, message: &str) {
 }
 
 /// Basis structures initialization
-fn base_init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
+fn base_init() -> Result<(Logger, EventLoop<ApplicationEvent>, Window), InitError> {
     let mut save_path = default_settings_path()?;
     save_path.push("HexFieldPlayground");
 
@@ -61,7 +118,7 @@ fn base_init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
     trace!(logger, "Logger initilized");
 
     // Init event loop
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::with_user_event();
     trace!(logger, "Event loop initialized");
 
     // Init window
@@ -72,7 +129,7 @@ fn base_init() -> Result<(Logger, EventLoop<()>, Window), InitError> {
 }
 
 /// Window initialization
-fn init_window(event_loop: &EventLoop<()>) -> Result<Window, OsError> {
+fn init_window(event_loop: &EventLoop<ApplicationEvent>) -> Result<Window, OsError> {
     let window_builder = WindowBuilder::default()
         .with_title("HexFieldPlayground")
         .with_inner_size(PhysicalSize::new(800, 600));
