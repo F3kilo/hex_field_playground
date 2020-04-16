@@ -1,30 +1,54 @@
 pub mod error;
 pub mod event;
-pub mod model;
 
 use error::UpdateError;
 use event::Event;
 use slog::Logger;
 use std::sync::mpsc::{Receiver, RecvError, TryRecvError};
+use std::time::Duration;
 
 pub enum Status {
     Running,
     Finished,
 }
 
-pub struct App<Model> {
-    event_rx: Receiver<Event>,
-    logger: Logger,
-    model: Model,
+pub trait Model {
+    fn update<'a>(&mut self, events: impl Iterator<Item = &'a Event>) -> Status;
 }
 
-impl<Model: model::Model> App<Model> {
-    pub fn new(event_rx: Receiver<Event>, logger: Logger, model: Model) -> Self {
+pub trait Present {
+    type Mod;
+    type Rend;
+
+    fn present(&mut self, model: &Self::Mod, render: &mut Self::Rend);
+}
+
+pub trait Render {
+    fn render(&mut self);
+}
+
+pub struct App<M, P, R> {
+    event_rx: Receiver<Event>,
+    logger: Logger,
+    model: M,
+    present: P,
+    render: R,
+}
+
+impl<M, P, R> App<M, P, R>
+where
+    M: Model,
+    R: Render,
+    P: Present<Rend = R, Mod = M>,
+{
+    pub fn new(event_rx: Receiver<Event>, logger: Logger, model: M, present: P, render: R) -> Self {
         trace!(logger, "App is creating");
         Self {
             event_rx,
             logger,
             model,
+            present,
+            render,
         }
     }
 
@@ -33,9 +57,14 @@ impl<Model: model::Model> App<Model> {
         trace!(self.logger, "{:?} events fetched.", events.len());
 
         trace!(self.logger, "Updating model.");
-        if let model::Status::Finished = self.model.update(events.iter()) {
+        if let Status::Finished = self.model.update(events.iter()) {
             return Ok(Status::Finished);
         }
+
+        self.present.present(&self.model, &mut self.render);
+        self.render.render();
+
+        std::thread::sleep(Duration::from_millis(16));
 
         Ok(Status::Running)
     }

@@ -1,24 +1,24 @@
 use crate::app::event::{Event, Window};
-use crate::app::model::Model;
-use crate::app::model::Status;
+use crate::app::Model;
+use crate::app::Status;
 use std::time::Duration;
 use winit::event::{KeyboardInput, VirtualKeyCode};
 
-pub struct Counter {
+pub struct CounterModel {
     value: i32,
 }
 
-impl Counter {
+impl CounterModel {
     pub fn new() -> Self {
         Self { value: 0 }
     }
 
-    // pub fn value(&self) -> i32 {
-    //     self.value
-    // }
+    pub fn value(&self) -> i32 {
+        self.value
+    }
 }
 
-impl Model for Counter {
+impl Model for CounterModel {
     fn update<'a>(&mut self, events: impl Iterator<Item = &'a Event>) -> Status {
         for event in events {
             if let Event::Window {
@@ -61,9 +61,7 @@ impl Model for Counter {
                 self.value -= 1;
             }
         }
-
-        std::thread::sleep(Duration::from_millis(500));
-
+        
         Status::Running
     }
 }

@@ -1,6 +1,8 @@
 mod app;
-mod counter;
+mod counter_model;
+mod counter_text_present;
 mod error;
+mod term_render;
 
 use winit::dpi::PhysicalSize;
 use winit::event::{Event, StartCause};
@@ -27,7 +29,9 @@ use std::convert::TryInto;
 use std::sync::mpsc::{channel, Sender};
 
 use crate::app::event::ApplicationEvent;
-use counter::Counter;
+use crate::counter_text_present::CounterTextPresent;
+use crate::term_render::TermRender;
+use counter_model::CounterModel;
 use winit::event::Event::UserEvent;
 
 pub enum EventLoopNotice {
@@ -43,8 +47,7 @@ fn main() {
     });
 
     let event_loop_proxy = event_loop.create_proxy();
-
-    let event_tx = run_app(logger.clone(), event_loop_proxy);
+    let app_event_tx = run_app(logger.clone(), event_loop_proxy);
 
     info!(logger, "Initialization done");
 
@@ -59,7 +62,7 @@ fn main() {
         }
 
         if let Ok(input_event) = event.try_into() {
-            event_tx.send(input_event).unwrap_or_else(|_| {
+            app_event_tx.send(input_event).unwrap_or_else(|_| {
                 error!(logger, "Application disconnected. Exitting...");
                 *control_flow = ControlFlow::Exit;
             })
@@ -72,10 +75,12 @@ fn run_app(
     event_loop_proxy: EventLoopProxy<ApplicationEvent>,
 ) -> Sender<app::event::Event> {
     let app_thread_logger = logger.clone();
-    let counter = Counter::new();
+    let counter = CounterModel::new();
+    let present = CounterTextPresent;
+    let render = TermRender::new();
     let (event_tx, event_rx) = channel();
 
-    let app = App::new(event_rx, logger.clone(), counter);
+    let app = App::new(event_rx, logger.clone(), counter, present, render);
     std::thread::spawn(move || {
         let mut app = app;
         loop {
